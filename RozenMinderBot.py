@@ -4,10 +4,14 @@ import logging
 import telegram
 from telegram.error import NetworkError, Unauthorized
 from time import sleep
-from telegram.ext import Job
+from telegram.ext import Job,ConversationHandler
 from commontools import *
+from errortools import *
+from funtools import *
 from tookns import RozenMindertookn
-
+import re
+CHOOSING_TIME,CONFIRMING_TIME,CHOOSING_REPEAT,CONFIRMING_REPEAT,DONE,CANCELING= range(6)
+reNatural =  re.compile("[1-9]\d*")
 def start(bot, update):
     registrar(bot, update)
     bot.sendMessage(
@@ -26,9 +30,27 @@ def button(bot, update):
                         message_id=query.message.message_id)
 
 
-#def createReminder(bot,update,groups):
+def makeARemind(bot,update,groups):
+	texto = groups[1]
+	with db_session:
+		user,group=registrar(bot, update)
+		newRemind=Remind(user=user,start=ahoraMasHoras(-1),text=texto)
+		if group:
+			newRemind.group=group
+	responder(bot, update, text="Mmm ok you will get a reminder for this. \n When do you want to be reminded?(ex: in 3 hours)")
+	return CHOOSING_TIME
+def choosingTime(bot,update):
+	text = getText(bot, update)
+	trash =reNatural.findall(text)
+	if not trash or len(trash)>1:
+		responder(bot, update, text="Mmmm i think you put something wrong, try it again, (ex: in 10 hours)")
+		return CHOOSING_TIME
+	with db_session:
+		user,group=registrar(bot, update)
+		newRemind=Remind.get(user=user,start=ahoraMasHoras(-1),text=texto)
 
-def makeARemind(bot,job):
+	return ConversationHandler.END
+def doARemind(bot,job):
 	context = job.context
 	with db_session:
 		remind = Remind[context]
@@ -45,10 +67,12 @@ def callback_minute(bot, job):
 	with db_session:
 		nextReminds = select(r for r in Remind if now<=r.last+r.repeat and r.last+r.repeat<inFiveMinutes)[:]
 		for remind in nextReminds:
-			remind_job = Job(makeARemind, interval=0, repeat=False, context=remind.id)
-			job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
+			remind_job = Job(doARemind, interval=0, repeat=False, context=remind.id)
+			#job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
+			job.job_queue.put(remind_job,next_t=remind.repeat)
 	mandarARozen(bot, str(job.job_queue))
-
+def done(bot,update):
+	return ConversationHandler.END
 def main():
 	global update_id
 	botname = "RozenMinderBot"
@@ -66,6 +90,35 @@ def main():
 		for c in comandosArg:
 			handlearUpperLowerArgs(c[0], c[1], dispatcher, botname)
 		handlearCommons(dispatcher, botname)
+		handlearErrors(dispatcher, botname)
+		handlearFun(dispatcher, botname)
+		job_minute = Job(callback_minute, 300.0)
+		j.put(job_minute, next_t=0.0)
+		#updater.start_polling()
+		conv_handler = ConversationHandler(
+			entry_points=[RegexHandler("^(?i)/makeARemind(|@" + botname + ")\s(.*)",
+			        makeARemind,pass_groups=True)],
+        	states={
+            	CHOOSING_TIME: [MessageHandler(Filters.text,
+					#RegexHandler('in [1-9]\d* hours',
+				        choosingTime)],
+				CONFIRMING_TIME: [MessageHandler(Filters.text,
+                                           done),
+                ],
+#
+#				CHOOSING_REPEAT: [MessageHandler(Filters.text,
+#                                           regular_choice,
+#                                           pass_user_data=True),
+#                ],
+#            	CONFIRMING_REPEAT: [MessageHandler(Filters.text,
+#                                          received_information,
+#                                          pass_user_data=True),
+#                ],
+#				CANCELING:[],
+        	},
+        	fallbacks=[RegexHandler('^Done$', done, pass_user_data=True)]
+    	)
+		dispatcher.add_handler(conv_handler)
 		handler = MessageHandler(Filters.text | Filters.command, registrar)
 		dispatcher.add_handler(handler)
 		dispatcher.add_handler(CallbackQueryHandler(button))
@@ -73,40 +126,6 @@ def main():
 			MessageHandler(
 				Filters.status_update,
 				registrarIO))
-		job_minute = Job(callback_minute, 300.0)
-		j.put(job_minute, next_t=0.0)
-		#with db_session:
-		#	trash = Remind(user=User.get(id_user=137497264),start=ahoraMasMinutos(1),last=ahoraMasMinutos(1),text="Funca :D")
-		#updater.start_polling()
-
-    	# Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
-#    	conv_handler = ConversationHandler(
-#        	entry_points=[CommandHandler('start', start)],
-#        	states={
-#            	CHOOSING_TIME: [RegexHandler('^(Age|Favourite colour|Number of siblings)$',
-#                                    	regular_choice,
-#                                    	pass_user_data=True),
-#                       					RegexHandler('^Something else...$',
-#                                    	custom_choice),
-#                ],
-#				CONFIRMING_TIME: [MessageHandler(Filters.text,
-#                                           regular_choice,
-#                                           pass_user_data=True),
-#                ],
-#
-#				TYPING_CHOICE: [MessageHandler(Filters.text,
-#                                           regular_choice,
-#                                           pass_user_data=True),
-#                ],
-#            	TYPING_REPLY: [MessageHandler(Filters.text,
-#                                          received_information,
-#                                          pass_user_data=True),
-#                ],
-#        	},
-#        	fallbacks=[RegexHandler('^Done$', done, pass_user_data=True)]
-#    	)
-#    	dispatcher.add_handler(conv_handler)
-
 		updater.start_polling(clean=True)
 	except Exception as inst:
 		loguear("ERROR AL INICIAR EL "+botname)
