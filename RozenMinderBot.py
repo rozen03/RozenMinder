@@ -86,8 +86,8 @@ def callback_minute(bot, job):
 			job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
 			#job.job_queue.put(remind_job,next_t=remind.repeat)
 			#mandarARozen(bot,text=str(remind.id))
-	#loguear("runing callback_minute")
-	mandarARozen(bot, str(job.job_queue))
+	loguear("runing callback_minute")
+	#mandarARozen(bot, str(job.job_queue))
 def done(bot,update):
 	return ConversationHandler.END
 def main():
