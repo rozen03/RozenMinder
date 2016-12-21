@@ -5,13 +5,17 @@ import telegram
 from telegram.error import NetworkError, Unauthorized
 from time import sleep
 from telegram.ext import Job,ConversationHandler
-from commontools import *
-from errortools import *
-from funtools import *
+from rozentools.commontools import *
+from rozentools.errortools import *
+from rozentools.funtools import *
 from tookns import RozenMindertookn
 import re
 CHOOSING_TIME,CONFIRMING_TIME,CHOOSING_REPEAT,CONFIRMING_REPEAT,DONE,CANCELING= range(6)
-reNatural =  re.compile("[1-9]\d*")
+reNatural 	=  	re.compile("(?i)[1-9]\d*")
+reHours 	=	re.compile("(?i)[1-9]\d* hour[|s]")
+reMinutes	=	re.compile("(?i)[1-9]\d* minute[|s]")
+reSeconds	=	re.compile("(?i)[1-9]\d* second[|s]")
+
 def start(bot, update):
     registrar(bot, update)
     bot.sendMessage(
@@ -40,15 +44,25 @@ def makeARemind(bot,update,groups):
 	responder(bot, update, text="Mmm ok you will get a reminder for this. \n When do you want to be reminded?(ex: in 3 hours)")
 	return CHOOSING_TIME
 def choosingTime(bot,update):
-	text = getText(bot, update)
-	trash =reNatural.findall(text)
-	if not trash or len(trash)>1:
+	text  	= getText(bot, update)
+	trash1 	= reHours.findall(text)
+	trash2 	= reMinutes.findall(text)
+	trash3	= reSeconds.findall(text)
+	trash 	= trash1 or trash2 or trash3
+	if not trash  or len(trash)>1:
 		responder(bot, update, text="Mmmm i think you put something wrong, try it again, (ex: in 10 hours)")
 		return CHOOSING_TIME
+	hours 	= int(reNatural.search(trash1[0]).group(0)) if trash1 else 0
+	minutes = int(reNatural.search(trash2[0]).group(0)) if trash2 else 0
+	seconds	= int(reNatural.search(trash3[0]).group(0)) if trash3 else 0
+	startDateTime= datetime.datetime.now() + datetime.timedelta(hours=hours,minutes=minutes, seconds=seconds)
+	responder(bot, update,text="Ok, in "+str(hours)+" hours, "+str(minutes)+" minutes "+ str(seconds)+ " seconds")
 	with db_session:
 		user,group=registrar(bot, update)
-		newRemind=Remind.get(user=user,start=ahoraMasHoras(-1),text=texto)
-
+		newRemind=select(r for r in Remind if r.user == user and r.group == group).order_by(desc(Remind.id))[:1][0]
+		newRemind.start=startDateTime
+		newRemind.last=startDateTime
+		newRemind.enabled=True
 	return ConversationHandler.END
 def doARemind(bot,job):
 	context = job.context
@@ -63,13 +77,16 @@ def doARemind(bot,job):
 
 def callback_minute(bot, job):
 	now=ahoraMasHoras(0)
-	inFiveMinutes= ahoraMasMinutos(+5)
+	#inFiveMinutes= ahoraMasMinutos(+5)
+	inFiveMinutes= ahoraMasSegundos(+5)
 	with db_session:
 		nextReminds = select(r for r in Remind if now<=r.last+r.repeat and r.last+r.repeat<inFiveMinutes)[:]
 		for remind in nextReminds:
 			remind_job = Job(doARemind, interval=0, repeat=False, context=remind.id)
-			#job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
-			job.job_queue.put(remind_job,next_t=remind.repeat)
+			job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
+			#job.job_queue.put(remind_job,next_t=remind.repeat)
+			#mandarARozen(bot,text=str(remind.id))
+	#loguear("runing callback_minute")
 	mandarARozen(bot, str(job.job_queue))
 def done(bot,update):
 	return ConversationHandler.END
@@ -92,7 +109,7 @@ def main():
 		handlearCommons(dispatcher, botname)
 		handlearErrors(dispatcher, botname)
 		handlearFun(dispatcher, botname)
-		job_minute = Job(callback_minute, 300.0)
+		job_minute = Job(callback_minute, 5.0)
 		j.put(job_minute, next_t=0.0)
 		#updater.start_polling()
 		conv_handler = ConversationHandler(
