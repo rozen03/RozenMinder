@@ -85,9 +85,7 @@ def callback_minute(bot, job):
 			remind_job = Job(doARemind, interval=0, repeat=False, context=remind.id)
 			job.job_queue.put(remind_job,next_t=(remind.last+remind.repeat - ahoraMasHoras(0)).total_seconds())
 			#job.job_queue.put(remind_job,next_t=remind.repeat)
-			#mandarARozen(bot,text=str(remind.id))
-	loguear("runing callback_minute")
-	#mandarARozen(bot, str(job.job_queue))
+	#loguear("runing callback_minute")
 def done(bot,update):
 	return ConversationHandler.END
 def main():
@@ -116,7 +114,7 @@ def main():
 			entry_points=[RegexHandler("^(?i)/makeARemind(|@" + botname + ")\s(.*)",
 			        makeARemind,pass_groups=True)],
         	states={
-            	CHOOSING_TIME: [MessageHandler(Filters.text,
+            	CHOOSING_TIME: [MessageHandler(Filters.all,
 					#RegexHandler('in [1-9]\d* hours',
 				        choosingTime)],
 				CONFIRMING_TIME: [MessageHandler(Filters.text,
